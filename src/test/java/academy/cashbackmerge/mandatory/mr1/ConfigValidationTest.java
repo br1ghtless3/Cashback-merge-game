@@ -1,8 +1,14 @@
 package academy.cashbackmerge.mandatory.mr1;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.jupiter.api.Disabled;
+import academy.cashbackmerge.config.CampaignConfig;
+import academy.cashbackmerge.config.SpawnRule;
+import academy.cashbackmerge.model.CashbackLevel;
+import java.math.BigDecimal;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -10,31 +16,42 @@ import org.junit.jupiter.api.Test;
 @DisplayName("MR1. Конфиг кампании")
 class ConfigValidationTest {
 
+    private List<SpawnRule> validRules() {
+        return List.of(
+                new SpawnRule(CashbackLevel.ONE, new BigDecimal("0.85")),
+                new SpawnRule(CashbackLevel.TWO, new BigDecimal("0.15")));
+    }
+
     @Test
-    @Disabled("MR1: реализуй тест и удали эту строку")
     @DisplayName("Валидный конфиг принимается")
     void validConfigIsAccepted() {
-        fail("Тест не реализован");
+        CampaignConfig config = assertDoesNotThrow(() -> new CampaignConfig(10, validRules()));
+
+        assertEquals(10, config.getMovesLimit());
+        assertEquals(2, config.getSpawnRules().size());
     }
 
     @Test
-    @Disabled("MR1: реализуй тест и удали эту строку")
     @DisplayName("Сумма вероятностей spawn-правил не равна 1 — конфиг отклоняется")
     void probabilitiesNotSummingToOneAreRejected() {
-        fail("Тест не реализован");
+        List<SpawnRule> rules = List.of(
+                new SpawnRule(CashbackLevel.ONE, new BigDecimal("0.60")),
+                new SpawnRule(CashbackLevel.TWO, new BigDecimal("0.30")));
+
+        assertThrows(IllegalArgumentException.class, () -> new CampaignConfig(10, rules));
     }
 
     @Test
-    @Disabled("MR1: реализуй тест и удали эту строку")
     @DisplayName("movesLimit <= 0 — конфиг отклоняется")
     void nonPositiveMovesLimitIsRejected() {
-        fail("Тест не реализован");
+        assertThrows(IllegalArgumentException.class, () -> new CampaignConfig(0, validRules()));
+
+        assertThrows(IllegalArgumentException.class, () -> new CampaignConfig(-1, validRules()));
     }
 
     @Test
-    @Disabled("MR1: реализуй тест и удали эту строку")
     @DisplayName("Пустой список spawn-правил — конфиг отклоняется")
     void emptySpawnRulesAreRejected() {
-        fail("Тест не реализован");
+        assertThrows(IllegalArgumentException.class, () -> new CampaignConfig(10, List.of()));
     }
 }
