@@ -39,7 +39,10 @@ public class ConfigLoader {
             throw new ConfigValidationException("Отсутствует movesLimit");
         }
         List<SpawnRule> rules = readRules(json.spawnRules());
-        return new CampaignConfig(json.movesLimit(), rules);
+        List<RewardTier> rewards = readRewards(json.rewardTable());
+        CashbackLevel max = readLevel(json.maxRewardCashback(), "maxRewardCashback");
+        BigDecimal rate = readDecimal(json.maxRewardAllowedRate(), "maxRewardAllowedRate");
+        return new CampaignConfig(json.movesLimit(), rules, rewards, max, rate);
     }
 
     private List<SpawnRule> readRules(List<CampaignJson.SpawnRuleJson> source) {
@@ -54,6 +57,22 @@ public class ConfigLoader {
             result.add(new SpawnRule(
                     readLevel(item.cashback(), "spawnRules.cashback"),
                     readDecimal(item.probability(), "spawnRules.probability")));
+        }
+        return result;
+    }
+
+    private List<RewardTier> readRewards(List<CampaignJson.RewardJson> source) {
+        if (source == null || source.isEmpty()) {
+            throw new ConfigValidationException("Отсутствует rewardTable");
+        }
+        List<RewardTier> result = new ArrayList<>();
+        for (CampaignJson.RewardJson item : source) {
+            if (item == null) {
+                throw new ConfigValidationException("rewardTable содержит null");
+            }
+            result.add(new RewardTier(
+                    readLevel(item.cashback(), "rewardTable.cashback"),
+                    readDecimal(item.reward(), "rewardTable.reward")));
         }
         return result;
     }
