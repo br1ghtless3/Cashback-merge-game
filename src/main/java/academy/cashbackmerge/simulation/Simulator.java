@@ -26,8 +26,8 @@ public class Simulator {
     private static final long STRATEGY_SEED_SALT = 0x9E3779B97F4A7C15L;
 
     public SimulationReport simulate(CampaignConfig config, int players, String strategy, long seed) {
-        if (config == null || players <= 0 || !"random".equals(strategy)) {
-            throw new IllegalArgumentException("Нужны конфигурация, players > 0 и стратегия random");
+        if (config == null || players <= 0 || (!"random".equals(strategy) && !"greedy".equals(strategy))) {
+            throw new IllegalArgumentException("Нужны конфигурация, players > 0 и стратегия random/greedy");
         }
         Map<Integer, Integer> maxTiles = new TreeMap<>();
         Map<BigDecimal, Integer> rewards = new TreeMap<>();
@@ -38,7 +38,7 @@ public class Simulator {
 
         for (int player = 0; player < players; player++) {
             long playerSeed = seeds.nextLong();
-            PlayerOutcome outcome = play(config, playerSeed);
+            PlayerOutcome outcome = play(config, playerSeed, strategy);
             maxTiles.merge(outcome.highest().getValue(), 1, Integer::sum);
             BigDecimal reward = RewardCalculator.rewardFor(config, outcome.highest());
             rewards.merge(reward, 1, Integer::sum);
@@ -70,7 +70,7 @@ public class Simulator {
                 accepted ? "OK" : "FAILED");
     }
 
-    private PlayerOutcome play(CampaignConfig config, long seed) {
+    private PlayerOutcome play(CampaignConfig config, long seed, String strategy) {
         GameState state = new GameInitializer().initialize(config, seed);
         GameEngine engine = new GameEngine(config, seed ^ ENGINE_SEED_SALT);
         Random choices = new Random(seed ^ STRATEGY_SEED_SALT);
@@ -81,7 +81,9 @@ public class Simulator {
             if (valid.isEmpty()) {
                 break;
             }
-            Direction move = valid.get(choices.nextInt(valid.size()));
+            Direction move = "greedy".equals(strategy)
+                    ? bestDirection(engine, state.getBoard(), valid)
+                    : valid.get(choices.nextInt(valid.size()));
             engine.applyMove(state, move);
             CashbackLevel now = highestTile(state.getBoard());
             if (now.getValue() > highest.getValue()) {
@@ -89,6 +91,25 @@ public class Simulator {
             }
         }
         return new PlayerOutcome(highest, state.getScore());
+    }
+
+    // Среди допустимых ходов предпочитаем больший прирост score,
+    // затем больше свободных клеток. Равенство решаем порядком Direction.values().
+    private Direction bestDirection(GameEngine engine, Board board, List<Direction> valid) {
+        Direction best = valid.get(0);
+        int bestGained = Integer.MIN_VALUE;
+        int bestEmpty = Integer.MIN_VALUE;
+        for (Direction direction : valid) {
+            ShiftResult preview = engine.previewMove(board, direction);
+            int gained = preview.scoreGained();
+            int empty = preview.board().getEmptyPositions().size();
+            if (gained > bestGained || (gained == bestGained && empty > bestEmpty)) {
+                best = direction;
+                bestGained = gained;
+                bestEmpty = empty;
+            }
+        }
+        return best;
     }
 
     private List<Direction> legalDirections(GameEngine engine, Board board) {
