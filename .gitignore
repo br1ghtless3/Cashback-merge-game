@@ -23,3 +23,6 @@ desktop.ini
 *.hprof
 hs_err_pid*
 replay_pid*
+
+/report*.md
+/config/campaign.test.*.json

@@ -1,7 +1,7 @@
 package academy.cashbackmerge.config;
 
 import academy.cashbackmerge.model.CashbackLevel;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
@@ -10,101 +10,92 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ConfigLoader {
-
     private static final int BOARD_SIZE = 4;
-
     private final ObjectMapper mapper = new ObjectMapper();
 
     public CampaignConfig load(String path) throws IOException {
         if (path == null || path.isBlank()) {
-            throw new IllegalArgumentException("Путь к конфигурации не указан");
+            throw new ConfigValidationException("Путь к конфигурации не указан");
         }
-
-        JsonNode root = mapper.readTree(new File(path));
-
-        if (root == null || !root.isObject()) {
-            throw new IllegalArgumentException("Конфигурация должна быть JSON-объектом");
-        }
-
-        validateBoardSize(root);
-
-        int movesLimit = readMovesLimit(root);
-        List<SpawnRule> rules = readSpawnRules(root);
-
-        return new CampaignConfig(movesLimit, rules);
-    }
-
-    private void validateBoardSize(JsonNode root) {
-        JsonNode node = root.get("boardSize");
-
-        if (node == null || !node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() != BOARD_SIZE) {
-            throw new IllegalArgumentException("Размер игрового поля должен быть 4");
-        }
-    }
-
-    private int readMovesLimit(JsonNode root) {
-        JsonNode node = root.get("movesLimit");
-
-        if (node == null || !node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() <= 0) {
-            throw new IllegalArgumentException("Некорректный лимит ходов");
-        }
-
-        return node.intValue();
-    }
-
-    private List<SpawnRule> readSpawnRules(JsonNode root) {
-        JsonNode node = root.get("spawnRules");
-
-        if (node == null || !node.isArray() || node.isEmpty()) {
-            throw new IllegalArgumentException("Список spawn-правил отсутствует или пуст");
-        }
-
-        List<SpawnRule> rules = new ArrayList<>();
-
-        for (JsonNode ruleNode : node) {
-            rules.add(readSpawnRule(ruleNode));
-        }
-
-        return rules;
-    }
-
-    private SpawnRule readSpawnRule(JsonNode node) {
-        if (node == null || !node.isObject()) {
-            throw new IllegalArgumentException("Некорректное правило появления плитки");
-        }
-
-        CashbackLevel level = readCashback(node);
-        BigDecimal probability = readProbability(node);
-
-        return new SpawnRule(level, probability);
-    }
-
-    private CashbackLevel readCashback(JsonNode node) {
-        JsonNode cashbackNode = node.get("cashback");
-
-        if (cashbackNode == null || !cashbackNode.isTextual()) {
-            throw new IllegalArgumentException("Кэшбэк должен быть строкой");
-        }
-
+        CampaignJson json;
         try {
-            int value = Integer.parseInt(cashbackNode.textValue());
-            return CashbackLevel.fromValue(value);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Некорректное значение кэшбэка", e);
+            json = mapper.readValue(new File(path), CampaignJson.class);
+        } catch (JsonProcessingException e) {
+            throw new ConfigLoadException("Невозможно прочитать JSON: " + path, e);
+        } catch (IOException e) {
+            throw new ConfigLoadException("Не удалось открыть конфигурацию: " + path, e);
+        }
+        return fromJson(json);
+    }
+
+    private CampaignConfig fromJson(CampaignJson json) {
+        if (json == null) {
+            throw new ConfigValidationException("JSON конфигурации пуст");
+        }
+        if (json.boardSize() == null || json.boardSize() != BOARD_SIZE) {
+            throw new ConfigValidationException("boardSize должен быть равен 4");
+        }
+        if (json.movesLimit() == null) {
+            throw new ConfigValidationException("Отсутствует movesLimit");
+        }
+        List<SpawnRule> rules = readRules(json.spawnRules());
+        List<RewardTier> rewards = readRewards(json.rewardTable());
+        CashbackLevel max = readLevel(json.maxRewardCashback(), "maxRewardCashback");
+        BigDecimal rate = readDecimal(json.maxRewardAllowedRate(), "maxRewardAllowedRate");
+        return new CampaignConfig(json.movesLimit(), rules, rewards, max, rate);
+    }
+
+    private List<SpawnRule> readRules(List<CampaignJson.SpawnRuleJson> source) {
+        if (source == null || source.isEmpty()) {
+            throw new ConfigValidationException("Отсутствуют spawnRules");
+        }
+        List<SpawnRule> result = new ArrayList<>();
+        for (CampaignJson.SpawnRuleJson item : source) {
+            if (item == null) {
+                throw new ConfigValidationException("spawnRules содержит null");
+            }
+            result.add(new SpawnRule(
+                    readLevel(item.cashback(), "spawnRules.cashback"),
+                    readDecimal(item.probability(), "spawnRules.probability")));
+        }
+        return result;
+    }
+
+    private List<RewardTier> readRewards(List<CampaignJson.RewardJson> source) {
+        if (source == null || source.isEmpty()) {
+            throw new ConfigValidationException("Отсутствует rewardTable");
+        }
+        List<RewardTier> result = new ArrayList<>();
+        for (CampaignJson.RewardJson item : source) {
+            if (item == null) {
+                throw new ConfigValidationException("rewardTable содержит null");
+            }
+            result.add(new RewardTier(
+                    readLevel(item.cashback(), "rewardTable.cashback"),
+                    readDecimal(item.reward(), "rewardTable.reward")));
+        }
+        return result;
+    }
+
+    private CashbackLevel readLevel(String text, String field) {
+        if (text == null) {
+            throw new ConfigValidationException("Отсутствует поле " + field);
+        }
+        try {
+            return CashbackLevel.fromValue(Integer.parseInt(text));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException("Некорректное поле " + field, e);
         }
     }
 
-    private BigDecimal readProbability(JsonNode node) {
-        JsonNode probabilityNode = node.get("probability");
-
-        if (probabilityNode == null || !probabilityNode.isTextual()) {
-            throw new IllegalArgumentException("Вероятность должна быть строкой");
+    private BigDecimal readDecimal(String text, String field) {
+        if (text == null) {
+            throw new ConfigValidationException("Отсутствует поле " + field);
         }
-
         try {
-            return new BigDecimal(probabilityNode.textValue());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Некорректное значение вероятности", e);
+            return new BigDecimal(text);
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException("Некорректное поле " + field, e);
         }
     }
 }
